@@ -1,108 +1,83 @@
 #include <Arduino.h>
-#include "chip_facade.h"
 #include <Wire.h>
-#include <Adafruit_GFX.h>
-#include <Adafruit_SSD1306.h>
+// #include <Adafruit_GFX.h>
+// #include <Adafruit_SSD1306.h>
+#include <U8g2lib.h>
 #include <WiFi.h>
 #include <esp_now.h>
 #include "config.h" //parametri globali
 #include "lan_facade.h"
-#include "led_facade.h"
+
 #include "espnow_facade.h"
 
-unsigned long currentMillis = 0; // Memorizza l'attuale tempo in cui il LED è stato aggiornato
-unsigned long previousSendingMillis = 0; // Memorizza l'ultimo tempo in cui il LED è stato aggiornato
+unsigned long previousMillis = 0; // Memorizza l'ultimo tempo in cui il LED è stato aggiornato
 const long interval = 1000; // Intervallo di tempo per il lampeggio del LED (1 secondo)
 String macAddress; // Puntatore a char per memorizzare l'indirizzo MAC
-Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+// Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
+
 OledDecorator oledDecorator(display);
-// Indirizzo MAC del destinatario (sostituisci con l'indirizzo corretto)
-uint8_t broadcastAddress[] = {0xC8, 0x2B, 0x96, 0x8B, 0x57, 0xF8}; // C8:2B:96:8B:57:F8
+void testDisplay();
 
 void setup() {
-  Serial.begin(115200);
-  delay(1000);
+    Serial.begin(115200); // Inizializza la comunicazione seriale
 
-  Serial.println("");
-  Serial.println("");
+    //-------------------- Inizializzazione display OLED --------------------
+    display.begin();
+    Serial.println("Display inizializzato");
+    oledDecorator.setRow2("Display Inizializzato", true);
 
-  Serial.begin(115200); // Inizializza la comunicazione seriale
-  // pinMode(LED_FLASHING, OUTPUT);
 
-  Wire.begin(); // Inizializza la comunicazione I2C
-  Serial.println("Wire inizializzata");
-  delay(1000);
-  display.begin(SSD1306_SWITCHCAPVCC, OLED_ADDR);
-  Serial.println("Display inizializzato");
-  delay(1000);
+    //-------------------- Inizializzazione ESP-NOW --------------------
+    WiFi.mode(WIFI_STA);
+    Serial.println("WiFi inizializzato in modalità STA");
+    if (esp_now_init() != ESP_OK) {
+        Serial.println("Errore durante l'inizializzazione di ESP-NOW");
+        return;
+    }
+    // Registra le funzioni di callback
+    esp_now_register_recv_cb(OnDataRecv);
+    esp_now_register_send_cb(OnDataSent);
+    Serial.println("ESP-NOW inizializzato");
+    oledDecorator.setRow3("ESP-NOW inizializzato", true);
 
-  // Inizializza WiFi in modalità STA
-  WiFi.mode(WIFI_STA);
-  Serial.println("WiFi inizializzato in modalità STA");
 
-  // Inizializza ESP-NOW
-  if (esp_now_init() != ESP_OK) {
-      Serial.println("Errore durante l'inizializzazione di ESP-NOW");
-      return;
-  }
+    // pinMode(LED_FLASHING, OUTPUT);
 
-  // Register peer
-  memcpy(peerInfo.peer_addr, broadcastAddress, 6);
-  peerInfo.channel = 0;  
-  peerInfo.encrypt = false;
-  
-  // Add peer        
-  if (esp_now_add_peer(&peerInfo) != ESP_OK){
-    Serial.println("Failed to add peer");
-    return;
-  }
+    // Ottieni l'indirizzo MAC del dispositivo
+    Serial.println("Accedo ai dati di rete");
+    macAddress = GetMacAddress();
+    Serial.println("Mac Address:" + macAddress);
+    oledDecorator.setRow1("MA:" + macAddress);
+    // oledDecorator.setRow2("MA:" + macAddress);
+    oledDecorator.render();
 
-  // Registra le funzioni di callback
-  esp_now_register_recv_cb(OnDataRecv);
-  esp_now_register_send_cb(OnDataSent);
-  Serial.println("ESP-NOW inizializzato");
+    pinMode(BUTTON_K1, INPUT);
 
-  // pinMode(LED_FLASHING, OUTPUT);
-
-  // Ottieni l'indirizzo MAC del dispositivo
-  Serial.println("Accedo ai dati di rete");
-  macAddress = GetMacAddress();
-  Serial.println("Mac Address:" + macAddress);
-  oledDecorator.SetRow1("MA:" + macAddress);
-  // oledDecorator.SetRow2("Riga 2");
-  // oledDecorator.SetRow3("Riga 3");
-  oledDecorator.SetRow4("-davraf-");
-  oledDecorator.render();
-
-  printChipInfoes();
 }
 
 void loop() {
-  currentMillis = millis();
+    if (digitalRead(BUTTON_K1) == LOW) {
+        Serial.println("Pulsante K1 premuto");
+        oledDecorator.setRow2("Porcone lanciato", true);
+        // invia dati tramite esp-now
+        struct_message message;
+        strcpy(message.a, "Porcone lanciato");
+        message.b = 123;
+        message.c = 3.14;
+        message.d = true;
+        esp_err_t result = esp_now_send(peerInfo.peer_addr, (uint8_t *) &message, sizeof(message));
+        if (result == ESP_OK) {
+            oledDecorator.setRow3("Dati inviati con successo", true);
+        } else {
+            oledDecorator.setRow3("Errore di trasmissione", true);
+        }
 
-  // FlashingLed();
-
-  if (currentMillis - previousSendingMillis >= interval) {
-    previousSendingMillis = currentMillis;
-    // Esempio di invio dati
-    struct_message outgoingMessage;
-    strcpy(outgoingMessage.a, "I am the MASTER!");
-    outgoingMessage.b = 123;
-    outgoingMessage.c = 45.67;
-    outgoingMessage.d = true;
-
-    esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &outgoingMessage, sizeof(outgoingMessage));
-
-    if (result == ESP_OK) {
-        Serial.println("Invio riuscito");
-        oledDecorator.SetRow3("ESP-NOW inviato");
-    } else {
-        Serial.println("Errore durante l'invio");
-        oledDecorator.SetRow3("ESP-NOW errore");
+        delay(3000);
+        oledDecorator.setRow2("");
+        oledDecorator.setRow3(""); 
+        oledDecorator.render();
     }
- }
-  
 
-  oledDecorator.render();
- 
 }
+
