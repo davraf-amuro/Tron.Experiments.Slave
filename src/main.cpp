@@ -1,7 +1,5 @@
 #include <Arduino.h>
 #include <Wire.h>
-// #include <Adafruit_GFX.h>
-// #include <Adafruit_SSD1306.h>
 #include <U8g2lib.h>
 #include <WiFi.h>
 #include <esp_now.h>
@@ -13,7 +11,7 @@
 unsigned long previousMillis = 0; // Memorizza l'ultimo tempo in cui il LED è stato aggiornato
 const long interval = 1000; // Intervallo di tempo per il lampeggio del LED (1 secondo)
 String macAddress; // Puntatore a char per memorizzare l'indirizzo MAC
-// Adafruit_SSD1306 display(OLED_WIDTH, OLED_HEIGHT, &Wire, OLED_RESET);
+uint8_t broadcastAddress[] = {0xEC, 0x64, 0xC9, 0x86, 0x1A, 0x2C}; //EC:64:C9:86:1A:2C
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C display(U8G2_R0, /* reset=*/ U8X8_PIN_NONE);
 
 OledDecorator oledDecorator(display);
@@ -41,9 +39,6 @@ void setup() {
     Serial.println("ESP-NOW inizializzato");
     oledDecorator.setRow3("ESP-NOW inizializzato", true);
 
-
-    // pinMode(LED_FLASHING, OUTPUT);
-
     // Ottieni l'indirizzo MAC del dispositivo
     Serial.println("Accedo ai dati di rete");
     macAddress = GetMacAddress();
@@ -52,8 +47,9 @@ void setup() {
     // oledDecorator.setRow2("MA:" + macAddress);
     oledDecorator.render();
 
+    // Registra il peer
+    RegisterPeer(broadcastAddress);
     pinMode(BUTTON_K1, INPUT);
-
 }
 
 void loop() {
@@ -66,11 +62,47 @@ void loop() {
         message.b = 123;
         message.c = 3.14;
         message.d = true;
-        esp_err_t result = esp_now_send(peerInfo.peer_addr, (uint8_t *) &message, sizeof(message));
-        if (result == ESP_OK) {
-            oledDecorator.setRow3("Dati inviati con successo", true);
-        } else {
-            oledDecorator.setRow3("Errore di trasmissione", true);
+        // manda su serial la variabile broadcastAddress
+        Serial.print("TO:");
+        for (int i = 0; i < 6; i++) {
+            Serial.print(broadcastAddress[i], HEX);
+            Serial.print(":");
+        }
+        esp_err_t result = esp_now_send(broadcastAddress, (uint8_t *) &message, sizeof(message));
+        switch (result) {
+            case ESP_OK:
+                oledDecorator.setRow3("Dati inviati con successo", true);
+                Serial.println("Dati inviati con successo");
+                break;
+            case ESP_ERR_ESPNOW_NOT_INIT:
+                oledDecorator.setRow3("ESP-NOW non è inizializzato", true);
+                Serial.println("Errore di trasmissione: ESP-NOW non è inizializzato");
+                break;
+            case ESP_ERR_ESPNOW_ARG:
+                oledDecorator.setRow3("Argomento non valido", true);
+                Serial.println("Errore di trasmissione: Argomento non valido");
+                break;
+            case ESP_ERR_ESPNOW_INTERNAL:
+                oledDecorator.setRow3("Errore interno", true);
+                Serial.println("Errore di trasmissione: Errore interno");
+                break;
+            case ESP_ERR_ESPNOW_NO_MEM:
+                oledDecorator.setRow3("Memoria insufficiente", true);
+                Serial.println("Errore di trasmissione: Memoria insufficiente");
+                break;
+            case ESP_ERR_ESPNOW_NOT_FOUND:
+                oledDecorator.setRow3("Peer non trovato", true);
+                Serial.println("Errore di trasmissione: Peer non trovato");
+                break;
+            case ESP_ERR_ESPNOW_IF:
+                oledDecorator.setRow3("Errore di interfaccia", true);
+                Serial.println("Errore di trasmissione: Errore di interfaccia");
+                break;
+            default:
+                oledDecorator.setRow3("Errore sconosciuto", true);
+                Serial.println("Errore di trasmissione: Errore sconosciuto");
+                Serial.println(result);
+                break;
         }
 
         delay(3000);
@@ -80,4 +112,3 @@ void loop() {
     }
 
 }
-

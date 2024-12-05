@@ -17,6 +17,8 @@ extern struct_message incomingMessage;
 // Create peer interface
 extern esp_now_peer_info_t peerInfo;
 
+void RegisterPeer(uint8_t broadcastAddress[]);
+
 // Callback per la ricezione dei dati
 void OnDataRecv(const uint8_t *mac_addr, const uint8_t *data, int data_len);
 
