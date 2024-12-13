@@ -11,6 +11,7 @@
 // #define OLED_RESET -1 // Reset pin (usato -1 se non collegato)
 
 #define BUTTON_K1 34
+#define BUTTON_K4 27
 
 extern const long interval; // Dichiarazione della variabile globale
 extern unsigned long currentMillis; // Dichiarazione della variabile globale
